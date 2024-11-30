@@ -1,0 +1,7 @@
+[package]
+name = "rust_mining_ex"
+description = "Based on 'Blockchain Mining with Rust' articles: https://www.innoq.com/en/blog/2018/06/blockchain-mining-with-rust/ https://www.innoq.com/en/blog/2018/06/blockchain-mining-embarrassingly-parallel/"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
