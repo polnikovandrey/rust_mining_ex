@@ -1,4 +1,6 @@
+use std::time::SystemTime;
 use crypto_hash::{hex_digest, Algorithm};
+use histogram::Histogram;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -60,4 +62,41 @@ impl Block {
             block.proof += 1;
         }
     }
+
+    pub fn mine_with_iterator(block_candidate: &Block, prefix: &str) -> Block {
+        (0..).map(|proof| Block {
+            index: block_candidate.index,
+            timestamp: block_candidate.timestamp,
+            proof,
+            transactions: block_candidate.transactions.clone(),
+            previous_block_hash: block_candidate.previous_block_hash.clone(),
+        }).find(|b| Self::valid(&Self::hash(b), prefix)).unwrap()
+    }
+}
+
+pub fn measure<F>(label: &str, closure: F) where F: Fn() -> String {
+    let iters = 10;
+    let mut histogram = Histogram::new();
+    println!("{}:", label);
+    for _ in 0..iters {
+        let start = SystemTime::now();
+        let mut s = closure();
+        let end = SystemTime::now();
+        let duration = end.duration_since(start).unwrap();
+        let millis: u64 = duration.as_secs() * 1000 + duration.subsec_nanos() as u64 / 1_000_000;
+        s.clear();
+        println!("{} ms", millis);
+        histogram.increment(millis).unwrap();
+    }
+    let mean = histogram.mean().unwrap();
+    let median = histogram.percentile(50f64).unwrap();
+    let min = histogram.minimum().unwrap();
+    let max = histogram.maximum().unwrap();
+    let std_dev = histogram.stddev().unwrap();
+    println!("mean:\t{} ms/iter", mean);
+    println!("median:\t{} ms/iter", median);
+    println!("min:\t{} ms/iter", min);
+    println!("max:\t{} ms/iter", max);
+    println!("std_dev:\t{} ms/iter", std_dev);
+
 }
