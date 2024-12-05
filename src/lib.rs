@@ -1,7 +1,12 @@
-use std::time::SystemTime;
 use crypto_hash::{hex_digest, Algorithm};
 use histogram::Histogram;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::channel;
+use std::sync::Arc;
+use std::thread::spawn;
+use std::time::SystemTime;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Transaction {
@@ -64,18 +69,82 @@ impl Block {
     }
 
     pub fn mine_with_iterator(block_candidate: &Block, prefix: &str) -> Block {
-        (0..).map(|proof| Block {
-            index: block_candidate.index,
-            timestamp: block_candidate.timestamp,
-            proof,
-            transactions: block_candidate.transactions.clone(),
-            previous_block_hash: block_candidate.previous_block_hash.clone(),
-        }).find(|b| Self::valid(&Self::hash(b), prefix)).unwrap()
+        (0..)
+            .map(|proof| Block {
+                index: block_candidate.index,
+                timestamp: block_candidate.timestamp,
+                proof,
+                transactions: block_candidate.transactions.clone(),
+                previous_block_hash: block_candidate.previous_block_hash.clone(),
+            })
+            .find(|b| Self::valid(&Self::hash(b), prefix))
+            .unwrap()
+    }
+
+    pub fn mine_with_parallel_iterator_find_first(block_candidate: &Block, prefix: &str) -> Block {
+        (0..u64::MAX)
+            .into_par_iter()
+            .map(|proof| Block {
+                index: block_candidate.index,
+                timestamp: block_candidate.timestamp,
+                proof,
+                transactions: block_candidate.transactions.clone(),
+                previous_block_hash: block_candidate.previous_block_hash.clone(),
+            })
+            .find_first(|b| Self::valid(&Self::hash(b), prefix))
+            .unwrap()
+    }
+
+    pub fn mine_with_parallel_iterator_find_any(block_candidate: &Block, prefix: &str) -> Block {
+        (0..u64::MAX)
+            .into_par_iter()
+            .map(|proof| Block {
+                index: block_candidate.index,
+                timestamp: block_candidate.timestamp,
+                proof,
+                transactions: block_candidate.transactions.clone(),
+                previous_block_hash: block_candidate.previous_block_hash.clone(),
+            })
+            .find_any(|b| Self::valid(&Self::hash(b), prefix))
+            .unwrap()
+    }
+
+    pub fn mine_with_channels(block_candidate: &Block, prefix: &str) -> Block {
+        let num_threads: usize = 4;
+        let keep_running = Arc::new(AtomicBool::new(true));
+        let (sender, receiver) = channel();
+        let mut handles = Vec::with_capacity(num_threads);
+        for thread_id in 0..num_threads {
+            let keep_running_ref = keep_running.clone();
+            let mut block = block_candidate.clone();
+            let prefix = prefix.to_string();
+            block.proof = thread_id as u64;
+            let sender = sender.clone();
+            let handle = spawn(move || {
+                while keep_running_ref.load(Ordering::SeqCst)
+                    && !Self::valid(&Self::hash(&block), &prefix)
+                {
+                    block.proof += num_threads as u64;
+                }
+                sender.send(block.clone()).unwrap();
+                ()
+            });
+            handles.push(handle);
+        }
+        let block = receiver.recv().unwrap();
+        keep_running.store(false, Ordering::SeqCst);
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        block
     }
 }
 
-pub fn measure<F>(label: &str, closure: F) where F: Fn() -> String {
-    let iters = 10;
+pub fn measure<F>(label: &str, closure: F)
+where
+    F: Fn() -> String,
+{
+    let iters = 3;
     let mut histogram = Histogram::new();
     println!("{}:", label);
     for _ in 0..iters {
@@ -98,5 +167,4 @@ pub fn measure<F>(label: &str, closure: F) where F: Fn() -> String {
     println!("min:\t{} ms/iter", min);
     println!("max:\t{} ms/iter", max);
     println!("std_dev:\t{} ms/iter", std_dev);
-
 }
