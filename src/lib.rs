@@ -54,4 +54,10 @@ impl Block {
             previous_block_hash: Self::hash(previous_block),
         }
     }
+
+    pub fn mine_single_threaded_mutably(block: &mut Block, prefix: &str) {
+        while !Self::valid(&Self::hash(block), prefix) {
+            block.proof += 1;
+        }
+    }
 }
