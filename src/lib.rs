@@ -110,7 +110,7 @@ impl Block {
     }
 
     pub fn mine_with_channels(block_candidate: &Block, prefix: &str) -> Block {
-        let num_threads: usize = 4;
+        let num_threads: usize = 8;
         let keep_running = Arc::new(AtomicBool::new(true));
         let (sender, receiver) = channel();
         let mut handles = Vec::with_capacity(num_threads);
