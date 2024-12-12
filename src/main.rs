@@ -34,4 +34,10 @@ fn main() {
         let block = Block::new(1524480511, Vec::new(), &previous_block);
         format!("{:?}", Block::mine_with_channels(&block, "0000").proof)
     });
+
+    measure("test_mine_with_mutex", || {
+        let mut block = Block::new(1524480511, Vec::new(), &previous_block);
+        Block::mine_with_mutex(&mut block, "0000");
+        format!("{:?}", block.proof)
+    });
 }

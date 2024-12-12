@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::SystemTime;
 
@@ -138,13 +138,41 @@ impl Block {
         }
         block
     }
+
+    pub fn mine_with_mutex(block: &mut Block, prefix: &str) {
+        let num_threads: usize = 8;
+        let keep_running = Arc::new(AtomicBool::new(true));
+        let block_mutex = Arc::new(Mutex::new(block.clone()));
+        let mut handles = Vec::with_capacity(num_threads);
+        for thread_id in 0..num_threads {
+            let keep_running_ref = keep_running.clone();
+            let block_clone = Arc::clone(&block_mutex);
+            let prefix = prefix.to_string();
+            block.proof = thread_id as u64;
+            let handle = spawn(move || {
+                while keep_running_ref.load(Ordering::SeqCst) {
+                    let mut guard = block_clone.lock().unwrap();
+                    let hash1 = &Self::hash(&guard);
+                    guard.proof += num_threads as u64;
+                    if Self::valid(hash1, &prefix) {
+                        keep_running_ref.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                }
+            });
+            handles.push(handle);
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
 }
 
 pub fn measure<F>(label: &str, closure: F)
 where
     F: Fn() -> String,
 {
-    let iters = 3;
+    let iters = 10;
     let mut histogram = Histogram::new();
     println!("{}:", label);
     for _ in 0..iters {
